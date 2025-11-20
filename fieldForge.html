@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FieldForge: Interactive Electrostatics</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: rgba(30, 41, 59, 0.85);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent: #38bdf8;
+            --danger: #ef4444;
+            --positive: #ef4444;
+            --negative: #3b82f6;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body {
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text-primary);
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            cursor: grab;
+        }
+
+        #canvas-container:active {
+            cursor: grabbing;
+        }
+
+        /* UI Overlay */
+        .ui-panel {
+            position: absolute;
+            background: var(--panel-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            transition: opacity 0.2s;
+        }
+
+        #controls {
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            z-index: 10;
+        }
+
+        #info-panel {
+            bottom: 20px;
+            left: 20px;
+            pointer-events: none;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            z-index: 10;
+        }
+
+        /* Trash Zone */
+        #trash-zone {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(150%); /* Hidden initially */
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.15);
+            border: 2px dashed var(--danger);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--danger);
+            opacity: 0;
+            pointer-events: none; /* Allow click-through when hidden */
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 20;
+        }
+
+        #trash-zone.active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        #trash-zone.hover {
+            background: rgba(239, 68, 68, 0.4);
+            transform: translateX(-50%) scale(1.15);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+        }
+
+        #trash-zone svg {
+            width: 32px;
+            height: 32px;
+            fill: currentColor;
+        }
+
+        h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: var(--accent);
+        }
+
+        h2 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 4px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            background: #334155;
+            border-radius: 2px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: var(--accent);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 8px;
+        }
+
+        button {
+            background: #334155;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            flex: 1;
+        }
+
+        #add-pos, #add-neg {
+            cursor: grab;
+        }
+        #add-pos:active, #add-neg:active {
+            cursor: grabbing;
+        }
+
+        button:hover {
+            background: #475569;
+        }
+
+        button.primary {
+            background: var(--accent);
+            color: #0f172a;
+            font-weight: 600;
+        }
+        
+        button.primary:hover {
+            background: #7dd3fc;
+        }
+
+        button.danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+        }
+
+        button.danger:hover {
+            background: rgba(239, 68, 68, 0.3);
+        }
+
+        #modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+
+        #modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-content {
+            background: var(--bg-color);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 24px;
+            border-radius: 16px;
+            width: 300px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+
+        .modal-actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .hint {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            font-style: italic;
+            text-align: center;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            margin-bottom: 4px;
+        }
+        
+        input[type="checkbox"] {
+            accent-color: var(--accent);
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: var(--panel-bg);
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(10px);
+            z-index: 10;
+        }
+        
+        /* Light Mode Overrides */
+        body.light-mode {
+            --bg-color: #f8fafc;
+            --panel-bg: rgba(255, 255, 255, 0.9);
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --accent: #0284c7;
+        }
+        body.light-mode .ui-panel {
+            border: 1px solid rgba(0,0,0,0.1);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        body.light-mode button {
+            background: #e2e8f0;
+            color: #0f172a;
+        }
+        body.light-mode button:hover { background: #cbd5e1; }
+        body.light-mode button.primary {
+            background: var(--accent);
+            color: white;
+        }
+        body.light-mode #trash-zone {
+            border-color: var(--danger);
+            background: rgba(239, 68, 68, 0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container">
+        <canvas id="simCanvas"></canvas>
+    </div>
+
+    <button id="theme-btn" class="theme-toggle">
+        <span>🌗</span> Toggle Theme
+    </button>
+
+    <!-- Controls Panel -->
+    <div id="controls" class="ui-panel">
+        <div>
+            <h1>FieldForge</h1>
+            <div class="hint">Drag to move • Scroll to zoom • Ctrl+Z Undo</div>
+        </div>
+
+        <div class="btn-row" style="margin-top: 10px;">
+            <button class="primary" id="add-pos">+ Charge</button>
+            <button class="primary" style="background-color: var(--negative); color: white;" id="add-neg">- Charge</button>
+        </div>
+
+        <h2>Visualizations</h2>
+        
+        <label class="checkbox-group">
+            <input type="checkbox" id="show-field" checked> Show Electric Field
+        </label>
+        <div class="control-group">
+            <label>Field Density <span id="val-field">30</span></label>
+            <input type="range" id="density-field" min="10" max="80" value="30">
+        </div>
+
+        <label class="checkbox-group" style="margin-top: 8px;">
+            <input type="checkbox" id="show-potential" checked> Show Equipotential Lines
+        </label>
+        <div class="control-group">
+            <label>Potential Density <span id="val-potential">1.0</span></label>
+            <input type="range" id="density-potential" min="0.2" max="3.0" step="0.1" value="1.0">
+        </div>
+
+        <h2>Scene</h2>
+        <div class="btn-row">
+            <button id="reset-view">Reset View</button>
+            <button class="danger" id="clear-all">Clear All</button>
+        </div>
+    </div>
+
+    <!-- Info/Stats Panel -->
+    <div id="info-panel" class="ui-panel">
+        <div>Pos: <span id="mouse-coords">0, 0</span> m</div>
+        <div>Potential (V): <span id="mouse-potential" style="color: var(--accent)">0.00</span> V</div>
+        <div>Field (E): <span id="mouse-field">0.00</span> N/C</div>
+    </div>
+
+    <!-- Trash Zone -->
+    <div id="trash-zone">
+        <svg viewBox="0 0 24 24">
+            <path d="M3 6v18h18v-18h-18zm5 14c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm5 0c0 .552-.448 1-1 1s-1-.448-1-1v-10c0-.552.448-1 1-1s1 .448 1 1v10zm4-18v2h-20v-2h5.711c.9 0 1.631-1.099 1.631-2h5.316c0 .901.73 2 1.631 2h5.711z"/>
+        </svg>
+    </div>
+
+    <!-- Edit Charge Modal -->
+    <div id="modal-overlay">
+        <div class="modal-content">
+            <h2>Edit Charge</h2>
+            <div class="control-group" style="margin-top: 15px;">
+                <label>Magnitude (μC) <span id="edit-val-display">0</span></label>
+                <input type="range" id="edit-magnitude" min="-20" max="20" step="1">
+            </div>
+            <div class="modal-actions">
+                <button class="danger" id="delete-charge">Delete</button>
+                <button class="primary" id="close-modal">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+
+        /**
+         * Constants
+         */
+        const K = 8.99e4; 
+        const CHARGE_RADIUS = 15;
+        
+        let COLORS = {
+            pos: '#ef4444',
+            neg: '#3b82f6',
+            field: 'rgba(255, 255, 255, 0.4)',
+            potentialPos: '#ef4444',
+            potentialNeg: '#3b82f6',
+            grid: 'rgba(255,255,255,0.05)'
+        };
+
+        /**
+         * State & History
+         */
+        const state = {
+            charges: [],
+            camera: { x: 0, y: 0, zoom: 1 },
+            mouse: { x: 0, y: 0, worldX: 0, worldY: 0, isDown: false, draggingIdx: -1 },
+            // Interaction Modes
+            dragNew: { active: false, q: 0, sticky: false },
+            config: {
+                showField: true,
+                fieldDensity: 30,
+                showPotential: true,
+                potentialDensity: 1.0,
+                isLightMode: false
+            },
+            editingId: null,
+            history: [],
+            historyStep: -1
+        };
+
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false });
+
+        const ui = {
+            coords: document.getElementById('mouse-coords'),
+            potVal: document.getElementById('mouse-potential'),
+            fieldVal: document.getElementById('mouse-field'),
+            modal: document.getElementById('modal-overlay'),
+            editMag: document.getElementById('edit-magnitude'),
+            editDisplay: document.getElementById('edit-val-display'),
+            themeBtn: document.getElementById('theme-btn'),
+            trash: document.getElementById('trash-zone')
+        };
+
+        class Charge {
+            constructor(x, y, q) {
+                this.id = Math.random().toString(36).substr(2, 9);
+                this.x = x;
+                this.y = y;
+                this.q = q;
+            }
+        }
+
+        function init() {
+            resize();
+            window.addEventListener('resize', resize);
+            
+            // Initial State
+            state.charges.push(new Charge(-150, 0, 10));
+            state.charges.push(new Charge(150, 0, -10));
+            saveState(); // Save initial
+
+            setupInputHandlers();
+            updateTheme(); 
+            requestAnimationFrame(loop);
+        }
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+
+        /**
+         * Undo / Redo Logic
+         */
+        function saveState() {
+            // Remove future history if we are in middle
+            if (state.historyStep < state.history.length - 1) {
+                state.history = state.history.slice(0, state.historyStep + 1);
+            }
+            
+            // Deep copy charges
+            const snapshot = JSON.stringify(state.charges);
+            state.history.push(snapshot);
+            state.historyStep++;
+
+            // Limit history size
+            if (state.history.length > 50) {
+                state.history.shift();
+                state.historyStep--;
+            }
+        }
+
+        function undo() {
+            if (state.historyStep > 0) {
+                state.historyStep--;
+                state.charges = JSON.parse(state.history[state.historyStep]);
+            }
+        }
+
+        function redo() {
+            if (state.historyStep < state.history.length - 1) {
+                state.historyStep++;
+                state.charges = JSON.parse(state.history[state.historyStep]);
+            }
+        }
+
+        /**
+         * Input Handlers
+         */
+        function setupInputHandlers() {
+            // Keyboard Shortcuts
+            window.addEventListener('keydown', e => {
+                // Undo/Redo
+                if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                    e.preventDefault();
+                    if (e.shiftKey) redo();
+                    else undo();
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+                    e.preventDefault();
+                    redo();
+                }
+                // Esc to cancel drag
+                if (e.key === 'Escape') {
+                    state.dragNew = { active: false, q: 0, sticky: false };
+                    state.mouse.draggingIdx = -1;
+                    updateTrashUI(false);
+                }
+            });
+
+            // Mouse Move
+            window.addEventListener('mousemove', e => {
+                const rect = canvas.getBoundingClientRect();
+                state.mouse.x = e.clientX - rect.left;
+                state.mouse.y = e.clientY - rect.top;
+                state.mouse.worldX = (state.mouse.x - canvas.width/2) / state.camera.zoom + state.camera.x;
+                state.mouse.worldY = (state.mouse.y - canvas.height/2) / state.camera.zoom + state.camera.y;
+
+                // Handle Camera Pan
+                if (state.mouse.isDown && !state.dragNew.active && state.mouse.draggingIdx === -1) {
+                    state.camera.x -= e.movementX / state.camera.zoom;
+                    state.camera.y -= e.movementY / state.camera.zoom;
+                }
+
+                // Dragging Existing Charge
+                if (state.mouse.isDown && state.mouse.draggingIdx !== -1) {
+                    const c = state.charges[state.mouse.draggingIdx];
+                    c.x = state.mouse.worldX;
+                    c.y = state.mouse.worldY;
+                    checkTrashHover(e.clientX, e.clientY);
+                }
+
+                // Dragging New Charge (Ghost)
+                if (state.dragNew.active) {
+                    checkTrashHover(e.clientX, e.clientY);
+                }
+
+                updateStats();
+            });
+
+            // Mouse Down (Canvas)
+            canvas.addEventListener('mousedown', e => {
+                if (state.dragNew.active) {
+                    // If in sticky mode, this click places the charge
+                    if (state.dragNew.sticky) {
+                        // Check trash hit
+                        if (isOverTrash(e.clientX, e.clientY)) {
+                            state.dragNew = { active: false, q: 0, sticky: false };
+                        } else {
+                            addCharge(state.dragNew.q, state.mouse.worldX, state.mouse.worldY);
+                            saveState();
+                            state.dragNew = { active: false, q: 0, sticky: false };
+                        }
+                        updateTrashUI(false);
+                    }
+                    return;
+                }
+
+                state.mouse.isDown = true;
+                
+                // Hit Test
+                let hitIdx = -1;
+                for (let i = state.charges.length - 1; i >= 0; i--) {
+                    const c = state.charges[i];
+                    const dx = state.mouse.worldX - c.x;
+                    const dy = state.mouse.worldY - c.y;
+                    if (dx*dx + dy*dy < (CHARGE_RADIUS * 1.5)**2) {
+                        hitIdx = i;
+                        break;
+                    }
+                }
+
+                if (hitIdx !== -1) {
+                    state.mouse.draggingIdx = hitIdx;
+                    // Removed: updateTrashUI(true); - Trash only for new charges
+                }
+            });
+
+            // Global Mouse Up
+            window.addEventListener('mouseup', e => {
+                state.mouse.isDown = false;
+
+                // Handle Drop of Existing Charge
+                if (state.mouse.draggingIdx !== -1) {
+                    // Removed trash deletion logic for existing charges
+                    saveState(); // Save new position
+                    state.mouse.draggingIdx = -1;
+                }
+
+                // Handle Drop of New Charge (from Drag)
+                if (state.dragNew.active && !state.dragNew.sticky) {
+                    // If mouse released over UI button, enter Sticky Mode
+                    if (isOverUI(e.clientX, e.clientY)) {
+                        state.dragNew.sticky = true;
+                        // Don't hide trash yet, we are still in mode
+                    } else if (isOverTrash(e.clientX, e.clientY)) {
+                        state.dragNew = { active: false, q: 0, sticky: false };
+                        updateTrashUI(false);
+                    } else {
+                        // Placed on canvas
+                        addCharge(state.dragNew.q, state.mouse.worldX, state.mouse.worldY);
+                        saveState();
+                        state.dragNew = { active: false, q: 0, sticky: false };
+                        updateTrashUI(false);
+                    }
+                }
+            });
+
+            // Double Click
+            canvas.addEventListener('dblclick', e => {
+                if (state.dragNew.active) return;
+                for (let i = state.charges.length - 1; i >= 0; i--) {
+                    const c = state.charges[i];
+                    const dx = state.mouse.worldX - c.x;
+                    const dy = state.mouse.worldY - c.y;
+                    if (dx*dx + dy*dy < (CHARGE_RADIUS * 1.5)**2) {
+                        openEditModal(i);
+                        return;
+                    }
+                }
+            });
+
+            // Zoom
+            canvas.addEventListener('wheel', e => {
+                e.preventDefault();
+                const zoomSensitivity = 0.001;
+                const newZoom = Math.max(0.05, Math.min(5.0, state.camera.zoom - e.deltaY * zoomSensitivity));
+                const mouseWorldX = state.mouse.worldX;
+                const mouseWorldY = state.mouse.worldY;
+                state.camera.zoom = newZoom;
+                state.camera.x = mouseWorldX - (state.mouse.x - canvas.width/2) / newZoom;
+                state.camera.y = mouseWorldY - (state.mouse.y - canvas.height/2) / newZoom;
+            }, { passive: false });
+
+            // UI Buttons - "Start Drag"
+            const startDragNew = (q, e) => {
+                e.preventDefault(); 
+                state.dragNew = { active: true, q: q, sticky: false };
+                
+                // Initial pos update
+                const rect = canvas.getBoundingClientRect();
+                state.mouse.x = e.clientX - rect.left;
+                state.mouse.y = e.clientY - rect.top;
+                updateTrashUI(true);
+            };
+
+            const btnPos = document.getElementById('add-pos');
+            const btnNeg = document.getElementById('add-neg');
+
+            btnPos.onmousedown = (e) => startDragNew(10, e);
+            btnNeg.onmousedown = (e) => startDragNew(-10, e);
+
+            // NEW: Trash click handler for "Sticky Mode" cancellation
+            ui.trash.onmousedown = (e) => {
+                if (state.dragNew.active) {
+                    e.stopPropagation(); // Stop event from reaching canvas
+                    state.dragNew = { active: false, q: 0, sticky: false };
+                    updateTrashUI(false);
+                }
+            };
+
+            document.getElementById('clear-all').onclick = () => {
+                state.charges = [];
+                saveState();
+            };
+            document.getElementById('reset-view').onclick = () => state.camera = { x: 0, y: 0, zoom: 1 };
+
+            // Settings
+            bindSlider('density-field', 'val-field', v => state.config.fieldDensity = parseInt(v));
+            bindSlider('density-potential', 'val-potential', v => state.config.potentialDensity = parseFloat(v));
+            document.getElementById('show-field').onchange = (e) => state.config.showField = e.target.checked;
+            document.getElementById('show-potential').onchange = (e) => state.config.showPotential = e.target.checked;
+
+            // Modal
+            document.getElementById('close-modal').onclick = closeEditModal;
+            document.getElementById('delete-charge').onclick = () => {
+                deleteCurrentCharge();
+                saveState();
+            };
+            ui.editMag.oninput = (e) => {
+                const val = parseInt(e.target.value);
+                ui.editDisplay.innerText = val > 0 ? `+${val}` : val;
+                if (state.editingId !== null) state.charges[state.editingId].q = val;
+            };
+            ui.editMag.onchange = () => saveState(); // Save after slider drag release
+
+            ui.themeBtn.onclick = () => {
+                state.config.isLightMode = !state.config.isLightMode;
+                updateTheme();
+            };
+        }
+
+        /**
+         * UI Helpers
+         */
+        function isOverTrash(x, y) {
+            const rect = ui.trash.getBoundingClientRect();
+            // Simple circle collision
+            const cx = rect.left + rect.width/2;
+            const cy = rect.top + rect.height/2;
+            const r = rect.width/2;
+            const d = Math.sqrt((x-cx)**2 + (y-cy)**2);
+            return d < r * 1.5; // Generous hit area
+        }
+
+        function isOverUI(x, y) {
+            const controls = document.getElementById('controls');
+            const rect = controls.getBoundingClientRect();
+            return (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
+        }
+
+        function updateTrashUI(visible) {
+            if (visible) ui.trash.classList.add('active');
+            else {
+                ui.trash.classList.remove('active');
+                ui.trash.classList.remove('hover');
+            }
+        }
+
+        function checkTrashHover(x, y) {
+            if (isOverTrash(x, y)) ui.trash.classList.add('hover');
+            else ui.trash.classList.remove('hover');
+        }
+
+        function bindSlider(id, displayId, callback) {
+            const slider = document.getElementById(id);
+            const display = document.getElementById(displayId);
+            slider.oninput = (e) => {
+                display.innerText = e.target.value;
+                callback(e.target.value);
+            };
+        }
+
+        function updateTheme() {
+            if (state.config.isLightMode) {
+                document.body.classList.add('light-mode');
+                COLORS.field = 'rgba(0, 0, 0, 0.4)'; 
+                COLORS.grid = 'rgba(0,0,0,0.05)';
+            } else {
+                document.body.classList.remove('light-mode');
+                COLORS.field = 'rgba(255, 255, 255, 0.4)';
+                COLORS.grid = 'rgba(255,255,255,0.05)';
+            }
+        }
+
+        function addCharge(q, x, y) {
+            if (x === undefined) { // Legacy safe
+                x = state.camera.x; y = state.camera.y;
+            }
+            state.charges.push(new Charge(x, y, q));
+        }
+
+        function openEditModal(idx) {
+            state.editingId = idx;
+            ui.editMag.value = state.charges[idx].q;
+            ui.editDisplay.innerText = state.charges[idx].q > 0 ? `+${state.charges[idx].q}` : state.charges[idx].q;
+            ui.modal.classList.add('active');
+        }
+        function closeEditModal() { ui.modal.classList.remove('active'); state.editingId = null; }
+        function deleteCurrentCharge() {
+            if (state.editingId !== null) { state.charges.splice(state.editingId, 1); closeEditModal(); }
+        }
+        function getFieldAt(x, y) {
+            let Ex = 0, Ey = 0;
+            for (let c of state.charges) {
+                const dx = x - c.x, dy = y - c.y;
+                const r2 = dx*dx + dy*dy;
+                if (r2 < 1) continue;
+                const r = Math.sqrt(r2);
+                const E = K * c.q / r2;
+                Ex += E * (dx / r);
+                Ey += E * (dy / r);
+            }
+            return { x: Ex, y: Ey, mag: Math.sqrt(Ex*Ex + Ey*Ey) };
+        }
+        function getPotentialAt(x, y) {
+            let V = 0;
+            for (let c of state.charges) {
+                const dx = x - c.x, dy = y - c.y;
+                const r = Math.sqrt(dx*dx + dy*dy);
+                V += K * c.q / (r < 5 ? 5 : r);
+            }
+            return V;
+        }
+        function updateStats() {
+            const v = getPotentialAt(state.mouse.worldX, state.mouse.worldY);
+            const e = getFieldAt(state.mouse.worldX, state.mouse.worldY);
+            ui.coords.innerText = `${state.mouse.worldX.toFixed(0)}, ${state.mouse.worldY.toFixed(0)}`;
+            ui.potVal.innerText = v.toFixed(1);
+            ui.fieldVal.innerText = e.mag.toFixed(2);
+        }
+        function worldToScreen(wx, wy) {
+            return {
+                x: (wx - state.camera.x) * state.camera.zoom + canvas.width / 2,
+                y: (wy - state.camera.y) * state.camera.zoom + canvas.height / 2
+            };
+        }
+        function screenToWorld(sx, sy) {
+            return {
+                x: (sx - canvas.width/2) / state.camera.zoom + state.camera.x,
+                y: (sy - canvas.height/2) / state.camera.zoom + state.camera.y
+            };
+        }
+
+        function loop() {
+            ctx.fillStyle = state.config.isLightMode ? '#f8fafc' : '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            renderGrid();
+
+            if (state.config.showPotential) renderPotentialMarchingSquares();
+            if (state.config.showField) renderFieldLinesWithArrows();
+            renderCharges();
+
+            // Render Ghost Charge if dragging
+            if (state.dragNew.active) {
+                renderGhostCharge();
+            }
+
+            requestAnimationFrame(loop);
+        }
+
+        function renderGhostCharge() {
+            const q = state.dragNew.q;
+            const x = state.mouse.x;
+            const y = state.mouse.y;
+            const radius = CHARGE_RADIUS * state.camera.zoom;
+
+            ctx.save();
+            ctx.globalAlpha = 0.6;
+            
+            ctx.fillStyle = q > 0 ? COLORS.pos : COLORS.neg;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.strokeStyle = state.config.isLightMode ? '#000' : '#fff';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+
+            ctx.globalAlpha = 1.0;
+            ctx.fillStyle = '#fff';
+            ctx.font = `bold ${14 * state.camera.zoom}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(q > 0 ? '+' : '-', x, y);
+            
+            // Hint text for sticky mode
+            if (state.dragNew.sticky) {
+                ctx.font = '12px sans-serif';
+                ctx.fillText('Click to Place', x, y + radius + 15);
+            }
+
+            ctx.restore();
+        }
+
+        function renderGrid() {
+            const gridSize = 100 * state.camera.zoom;
+            const offsetX = (canvas.width/2 - state.camera.x * state.camera.zoom) % gridSize;
+            const offsetY = (canvas.height/2 - state.camera.y * state.camera.zoom) % gridSize;
+
+            ctx.strokeStyle = COLORS.grid;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            if (gridSize > 20) {
+                for (let x = offsetX; x < canvas.width; x += gridSize) {
+                    ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height);
+                }
+                for (let y = offsetY; y < canvas.height; y += gridSize) {
+                    ctx.moveTo(0, y); ctx.lineTo(canvas.width, y);
+                }
+                ctx.stroke();
+            }
+        }
+
+        function renderCharges() {
+            for (let c of state.charges) {
+                const pos = worldToScreen(c.x, c.y);
+                const radius = CHARGE_RADIUS * state.camera.zoom;
+
+                ctx.fillStyle = c.q > 0 ? COLORS.pos : (c.q < 0 ? COLORS.neg : '#888');
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.strokeStyle = state.config.isLightMode ? 'rgba(0,0,0,0.2)' : 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = '#fff';
+                ctx.font = `bold ${14 * state.camera.zoom}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(c.q > 0 ? '+' : (c.q < 0 ? '-' : '0'), pos.x, pos.y);
+            }
+        }
+
+        function renderPotentialMarchingSquares() {
+            const cellSize = 10;
+            const cols = Math.ceil(canvas.width / cellSize) + 1;
+            const rows = Math.ceil(canvas.height / cellSize) + 1;
+            const voltageStep = 500 / state.config.potentialDensity; 
+
+            const grid = new Float32Array(cols * rows);
+
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    const worldPos = screenToWorld(x * cellSize, y * cellSize);
+                    grid[y * cols + x] = getPotentialAt(worldPos.x, worldPos.y);
+                }
+            }
+
+            ctx.lineWidth = 1.5;
+
+            for (let y = 0; y < rows - 1; y++) {
+                for (let x = 0; x < cols - 1; x++) {
+                    const bl = grid[(y+1)*cols + x];     
+                    const br = grid[(y+1)*cols + x + 1]; 
+                    const tr = grid[y*cols + x + 1];     
+                    const tl = grid[y*cols + x];         
+
+                    const minV = Math.min(bl, br, tr, tl);
+                    const maxV = Math.max(bl, br, tr, tl);
+
+                    const startStep = Math.ceil(minV / voltageStep);
+                    const endStep = Math.floor(maxV / voltageStep);
+
+                    for (let k = startStep; k <= endStep; k++) {
+                        const isoVal = k * voltageStep;
+                        if (isoVal === 0) continue; 
+
+                        drawIsoLineInCell(x, y, cellSize, isoVal, tl, tr, br, bl);
+                    }
+                }
+            }
+        }
+
+        function drawIsoLineInCell(gx, gy, size, val, tl, tr, br, bl) {
+            let mask = 0;
+            if (tl >= val) mask |= 8;
+            if (tr >= val) mask |= 4;
+            if (br >= val) mask |= 2;
+            if (bl >= val) mask |= 1;
+
+            if (mask === 0 || mask === 15) return; 
+
+            const getT = (v1, v2) => (val - v1) / (v2 - v1);
+            
+            const pT = { x: getT(tl, tr) * size, y: 0 };
+            const pR = { x: size, y: getT(tr, br) * size };
+            const pB = { x: getT(bl, br) * size, y: size };
+            const pL = { x: 0, y: getT(tl, bl) * size };
+
+            const cx = gx * size;
+            const cy = gy * size;
+
+            ctx.strokeStyle = val > 0 ? COLORS.potentialPos : COLORS.potentialNeg;
+            ctx.beginPath();
+
+            switch (mask) {
+                case 1: line(cx, cy, pL, pB); break;
+                case 2: line(cx, cy, pB, pR); break;
+                case 3: line(cx, cy, pL, pR); break;
+                case 4: line(cx, cy, pT, pR); break;
+                case 5: line(cx, cy, pL, pT); line(cx, cy, pB, pR); break;
+                case 6: line(cx, cy, pT, pB); break;
+                case 7: line(cx, cy, pL, pT); break;
+                case 8: line(cx, cy, pL, pT); break;
+                case 9: line(cx, cy, pT, pB); break;
+                case 10: line(cx, cy, pL, pB); line(cx, cy, pT, pR); break;
+                case 11: line(cx, cy, pT, pR); break;
+                case 12: line(cx, cy, pL, pR); break;
+                case 13: line(cx, cy, pB, pR); break;
+                case 14: line(cx, cy, pL, pB); break;
+            }
+            ctx.stroke();
+        }
+
+        function line(cx, cy, p1, p2) {
+            ctx.moveTo(cx + p1.x, cy + p1.y);
+            ctx.lineTo(cx + p2.x, cy + p2.y);
+        }
+
+        function renderFieldLinesWithArrows() {
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = COLORS.field;
+            
+            const stepSize = 10;
+            const maxSteps = 1000; 
+            
+            let seeds = [];
+            state.charges.forEach(c => {
+                if (c.q > 0) {
+                    const count = Math.floor(Math.abs(c.q) * (state.config.fieldDensity / 10));
+                    for (let i = 0; i < count; i++) {
+                        const angle = (Math.PI * 2 * i) / count;
+                        seeds.push({
+                            x: c.x + Math.cos(angle) * (CHARGE_RADIUS + 2),
+                            y: c.y + Math.sin(angle) * (CHARGE_RADIUS + 2)
+                        });
+                    }
+                }
+            });
+
+            ctx.beginPath();
+            
+            const arrows = [];
+
+            seeds.forEach(seed => {
+                let currX = seed.x;
+                let currY = seed.y;
+                
+                const startScreen = worldToScreen(currX, currY);
+                if (startScreen.x < -2000 || startScreen.x > canvas.width + 2000) return;
+
+                ctx.moveTo(startScreen.x, startScreen.y);
+                
+                let points = [{x: startScreen.x, y: startScreen.y}];
+
+                for (let i = 0; i < maxSteps; i++) {
+                    const eVec = getFieldAt(currX, currY);
+                    if (eVec.mag === 0) break;
+
+                    const dx = (eVec.x / eVec.mag) * stepSize;
+                    const dy = (eVec.y / eVec.mag) * stepSize;
+
+                    currX += dx;
+                    currY += dy;
+
+                    let hit = false;
+                    for (let c of state.charges) {
+                        if (c.q < 0) {
+                            const distSq = (currX - c.x)**2 + (currY - c.y)**2;
+                            if (distSq < CHARGE_RADIUS**2) { hit = true; break; }
+                        }
+                    }
+                    if (hit) break;
+
+                    const screenPos = worldToScreen(currX, currY);
+                    ctx.lineTo(screenPos.x, screenPos.y);
+                    points.push({x: screenPos.x, y: screenPos.y});
+
+                    if (screenPos.x < -500 || screenPos.x > canvas.width + 500 || 
+                        screenPos.y < -500 || screenPos.y > canvas.height + 500) break;
+                }
+
+                if (points.length > 10) {
+                    const mid = points[Math.floor(points.length / 2)];
+                    const next = points[Math.floor(points.length / 2) + 1];
+                    if (mid && next) {
+                        const angle = Math.atan2(next.y - mid.y, next.x - mid.x);
+                        arrows.push({x: mid.x, y: mid.y, angle: angle});
+                    }
+                }
+            });
+            ctx.stroke();
+
+            ctx.fillStyle = COLORS.field;
+            arrows.forEach(arr => {
+                ctx.save();
+                ctx.translate(arr.x, arr.y);
+                ctx.rotate(arr.angle);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(-6, -3);
+                ctx.lineTo(-6, 3);
+                ctx.fill();
+                ctx.restore();
+            });
+        }
+
+        init();
+
+        })();
+    </script>
+</body>
+</html>
